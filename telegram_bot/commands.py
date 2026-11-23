@@ -95,7 +95,8 @@ async def cmd_balance(update, ctx):
         await _reply(update, f"<b>USDT disponible ({s.mode}) :</b> {_fmt(usdt)}")
         return
     perf = db.performance()
-    invested = sum(p["entry_price"] * p["quantity"] for p in db.get_open_positions())
+    invested = sum(p["entry_price"] * p["quantity"] + p["entry_fee"]
+                   for p in db.get_open_positions())
     cash = s.starting_capital + perf["realized_pnl"] - invested
     await _reply(update, f"<b>Capital simulé (paper) :</b> {_fmt(cash)} USDT disponibles\n"
                          f"Investi : {_fmt(invested)} USDT")
@@ -143,7 +144,7 @@ async def cmd_profit(update, ctx):
         f"Gain/perte net : {_fmt(p['realized_pnl'], 4)} USDT\n"
         f"Taux de réussite : {_fmt(p['win_rate_pct'], 1)} %\n"
         f"Frais totaux : {_fmt(p['total_fees'], 4)} USDT\n"
-        "Gains non réalisés : disponibles avec le moteur de trading (étape 7).")
+        "Gains non réalisés : non inclus.")
 
 
 @authorized
