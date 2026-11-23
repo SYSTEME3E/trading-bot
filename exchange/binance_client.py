@@ -115,3 +115,24 @@ class BinanceClient:
             raise ValueError("quantité invalide")
         params = {"newClientOrderId": client_order_id} if client_order_id else {}
         return self.ex.create_order(symbol, "market", side, amount, None, params)
+
+    def find_order(self, symbol: str, client_order_id: str) -> dict | None:
+        """Retrouve un ordre par son identifiant client.
+
+        Sert après une erreur réseau pour savoir si l'ordre est réellement passé.
+        Retourne None si Binance ne le connaît pas ; lève ExchangeError si on ne
+        peut pas le savoir (réseau, authentification...).
+        """
+        if not self.can_trade:
+            return None
+
+        @with_retry()
+        def _fetch():
+            return self.ex.fetch_order(None, symbol, {"origClientOrderId": client_order_id})
+
+        try:
+            return _fetch()
+        except ExchangeError as e:
+            if isinstance(e.__cause__, ccxt.OrderNotFound):
+                return None
+            raise
