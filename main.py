@@ -1,10 +1,11 @@
 """Point d'entrée.
 
   python main.py --check   : vérifie la config, Binance et la base (sans Telegram)
-  python main.py           : lance le bot Telegram (boucle de trading : étapes 5-7)
+  python main.py           : lance le bot Telegram et la boucle de trading
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import sys
 from logging.handlers import RotatingFileHandler
@@ -13,7 +14,9 @@ from pathlib import Path
 import config
 from database.database import Database
 from exchange.binance_client import BinanceClient
-from telegram_bot.commands import RobotState, build_application
+from telegram_bot.commands import RobotState, build_application, notify
+from trading.risk_manager import RiskManager
+from trading.trader import Trader
 
 
 class RedactFilter(logging.Filter):
@@ -67,7 +70,28 @@ def main() -> int:
     if not s.telegram_token or not s.allowed_ids:
         log.error("TELEGRAM_BOT_TOKEN et TELEGRAM_ALLOWED_IDS sont requis.")
         return 1
-    app = build_application(s, db, ex, RobotState())
+    state = RobotState()
+    app = build_application(s, db, ex, state)
+    trader = Trader(s, db, ex, RiskManager(s, db, ex), state)
+
+    async def trading_job(context):
+        try:
+            msgs = await asyncio.to_thread(trader.tick)   # ccxt est synchrone : hors boucle asyncio
+        except Exception as e:
+            log.exception("Erreur dans le cycle de trading")
+            state.last_error = type(e).__name__
+            return
+        for m in msgs:
+            await notify(context.application, m)
+
+    async def startup_job(context):
+        await notify(context.application,
+                     f"Robot démarré en mode <b>{s.mode}</b>. Capital alloué : "
+                     f"{s.starting_capital:g} USDT. Cycle : {s.loop_interval} s.")
+
+    app.job_queue.run_once(startup_job, 3)
+    app.job_queue.run_repeating(trading_job, interval=s.loop_interval, first=5,
+                                job_kwargs={"max_instances": 1, "coalesce": True})
     log.info("Bot Telegram démarré (mode=%s).", s.mode)
     app.run_polling()
     return 0
