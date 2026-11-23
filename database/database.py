@@ -215,6 +215,15 @@ class Database:
             "total_fees": r["fees"],
         }
 
+    def realized_pnl_since(self, iso_ts: str) -> float:
+        """PnL net réalisé depuis un instant UTC (coupe-circuit de perte journalière)."""
+        with self._lock:
+            r = self._conn.execute(
+                "SELECT COALESCE(SUM(pnl_net),0) AS pnl FROM positions "
+                "WHERE status='closed' AND closed_at>=?", (iso_ts,)
+            ).fetchone()
+        return r["pnl"]
+
     # ---------- file de synchronisation ----------
     def pending_sync(self, limit: int = 200) -> list[dict]:
         with self._lock:
